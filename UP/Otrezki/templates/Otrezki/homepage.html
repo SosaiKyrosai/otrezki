@@ -1,0 +1,439 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{%block tittle%}
+Главная
+{%endblock%}
+{%block content%}
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-6">
+      <div class="form-group">
+        <label>Начальная точка:</label>
+        <div class="row">
+          <div class="col">
+            <input type="text" class="form-control numbers-only" id="x0" value="250">
+          </div>
+          <div class="col">
+            <input type="text" class="form-control numbers-only" id="y0" value="400">
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Длина отрезка:</label>
+        <input type="text" class="form-control numbers-only" id="z" value="300">
+      </div>
+      <div class="form-group">
+        <label>Угол наклона:</label>
+        <div class="row">
+          <div class="col">
+            <input type="text" class="form-control numbers-only" id="deg" value="-60">
+          </div>
+          <div class="col">
+            <button type="button" class="btn btn-success" onclick="add_line();">Рассчитать</button>
+		  </div>
+			<div class="col">
+				<button type="button" class="btn btn-success" onclick="clear_canvas();">Очистить</button>
+			</div>
+			<div class="col">
+				<button type="button" class="btn btn-success btn-sm" onclick="otladka();">Проверить точки пересечения</button>
+			</div>
+		</div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="form-group">
+        <label>Соотношение:</label>
+        <div class="row">
+			<div class="row align-items-center">
+				<div class="col">
+					<input type="text" class="form-control numbers-only" id="i1" value="1">
+				</div>
+				<div class="col-auto">
+					<h4> к </h4>
+				</div>
+				<div class="col">
+					<input type="text" class="form-control numbers-only" id="i2" value="2">
+				</div>
+			</div>
+			<div class="form-group row">
+				<label for="typeL" class="col-sm-2 col-form-label">Метка</label>
+				<div class="col-sm-8">
+					<select class="form-control" id="typeL">
+						<option>Красная</option>
+						<option>Синяя</option>
+						<option>Особенная</option>
+					</select>
+				</div>
+				<div class="col-sm-2">
+					<button type="button" class="btn btn-success" onclick="add_label();">Метка</button>
+				</div>
+			</div>
+
+		</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="form-check">
+  <input class="form-check-input numbers-only" type="checkbox" id="toggleCanvas">
+  <label class="form-check-label numbers-only" for="toggleCanvas">Показать/скрыть Canvas</label>
+</div>
+<canvas id="c" class="hideable numbers-only" width="716" height="450"></canvas>
+<div id="coords" class="hideable"></div>
+
+<link rel="stylesheet" href="https://snipp.ru/cdn/bootstrap/4.3/bootstrap.min.css">
+<style type="text/css">
+</style>
+
+<script>
+
+const toggleCanvas = document.getElementById("toggleCanvas");
+const can = document.getElementById("c");
+const coords = document.getElementById("coords");
+
+toggleCanvas.addEventListener("change", function() {
+  if (toggleCanvas.checked) {
+    can.style.display = "block";
+    coords.style.display = "block";
+  } else {
+    can.style.display = "none";
+    coords.style.display = "none";
+  }
+});
+
+// перебираем каждый элемент и устанавливаем обработчик события ввода
+var numberFields = document.querySelectorAll('.numbers-only');
+numberFields.forEach(function(field) {
+  field.addEventListener('input', function() {
+    // получаем введенное значение
+    var value = this.value;
+
+	if (/[^0-9]/.test(value)) {
+      alert("Вводите только цифры!");
+      value = value.replace(/\D/g, '');
+    }
+    // заменяем все нецифровые символы на пустую строку
+
+
+    // обновляем значение поля
+    this.value = value;
+  });
+});
+</script>
+<script>
+// глобальные переменные
+// создаём "оболочку" вокруг canvas элемента (id="c")
+var canvas = new fabric.Canvas('c');
+// Отображение координат мыши
+canvas.on('mouse:move', function(event) {
+  var pointer = canvas.getPointer(event.e);
+  var posX = pointer.x.toFixed(0);
+  var posY = pointer.y.toFixed(0);
+  var coordinates = 'X: ' + posX + ', Y: ' + posY;
+  document.getElementById('coords').innerHTML = coordinates;
+});
+var line_coord;
+var group_line;
+var objects_in_canvas =[];
+var object_coords = {};
+
+
+function coords_in_object(coords)
+{
+let coords_arr = {xmin:Math.round(parseInt(coords[3].x)),
+				  xmax:Math.round(parseInt(coords[1].x)),
+				  ymin:Math.round(parseInt(coords[3].y)),
+				  ymax:Math.round(parseInt(coords[1].y)),
+				  deg:Math.round((Math.atan((coords[1].y-coords[3].y)/(coords[1].x-coords[3].x)))*180/Math.PI),
+				  yardage:Math.round(Math.sqrt((Math.pow(coords[1].x-coords[3].x,2)) + (Math.pow(coords[1].y-coords[3].y,2))))
+				  };
+var name = objects_in_canvas[objects_in_canvas.length - 1];
+var arr = arr_line(coords_arr);
+Object.assign(object_coords, {[name]: arr});
+return coords_arr;
+}
+
+function modify_coords_in_object(nameLine){
+delete object_coords[nameLine];
+
+}
+
+function calculation_intersection_points(nameLine){
+for (let key in object_coords) {
+  let currentArray = object_coords[key];
+
+  // Перебираем каждый элемент текущего массива
+  for (let i = 0; i < currentArray.length; i++) {
+    let currentItem = currentArray[i];
+
+    // Сравниваем текущий элемент со всеми другими элементами в объекте
+    for (let otherKey in object_coords) {
+      let otherArray = object_coords[otherKey];
+
+      // Перебираем каждый элемент другого массива
+      for (let j = 0; j < otherArray.length; j++) {
+        let otherItem = otherArray[j];
+
+        // Сравниваем элементы
+        if (currentItem === otherItem && key !== otherKey) {
+          console.log(`Элемент ${currentItem} найден в массивах ${key} и ${otherKey}`);
+		let nums = currentItem.split(",");
+		let x = parseInt(nums[0]);
+		let y = parseInt(nums[1]);
+		point_on_line(x,y);
+        }
+      }
+    }
+  }
+}
+}
+
+
+function arr_line(coords){
+let z = 0;
+var arr_of_coords = [];
+while (z < coords.yardage) {
+	let x = Math.round(coords.xmin + Math.cos(coords.deg * Math.PI / 180) * z);
+	let y = Math.round(coords.ymin + Math.sin(coords.deg * Math.PI / 180) * z);
+	let xy = [x,y];
+	let xystring = xy.toString();
+	z++;
+	arr_of_coords.push(xystring);
+	}
+	return arr_of_coords;
+}
+
+function get_data()
+{
+	var x0 = Number($('#x0').val());
+	var y0 = Number($('#y0').val());
+	var i1 = Number($('#i1').val());
+	var i2 = Number($('#i2').val());
+	var z = Number($('#z').val());
+	var deg = Number($('#deg').val());
+	var typeL = $('#typeL').val();
+	var x = Math.round(x0 + Math.cos(deg * Math.PI / 180) * z);
+	var y = Math.round(y0 + Math.sin(deg * Math.PI / 180) * z);
+	var pointLabelX = Math.round(x0 + Math.cos(deg * Math.PI / 180) * ((z*i1)/i2));
+	var pointLabelY = Math.round(y0 + Math.sin(deg * Math.PI / 180) * ((z*i1)/i2));
+	let data_received = {x0:x0,y0:y0,z:z,deg:deg,x:x,y:y,i1:i1,i2:i2,pointLabelX:pointLabelX,pointLabelY:pointLabelY,typeL:typeL};
+	return data_received;
+}
+
+function otladka()
+{
+
+for (let key in object_coords) {
+  let currentArray = object_coords[key];
+
+  // Перебираем каждый элемент текущего массива
+  for (let i = 0; i < currentArray.length; i++) {
+    let currentItem = currentArray[i];
+
+    // Сравниваем текущий элемент со всеми другими элементами в объекте
+    for (let otherKey in object_coords) {
+      let otherArray = object_coords[otherKey];
+
+      // Перебираем каждый элемент другого массива
+      for (let j = 0; j < otherArray.length; j++) {
+        let otherItem = otherArray[j];
+
+        // Сравниваем элементы
+        if (currentItem === otherItem && key !== otherKey) {
+          console.log(`Элемент ${currentItem} найден в массивах ${key} и ${otherKey}`);
+		let nums = currentItem.split(",");
+		let x = parseInt(nums[0]);
+		let y = parseInt(nums[1]);
+		point_on_line(x,y);
+        }
+      }
+    }
+  }
+}
+
+
+
+
+
+coords_arr = coords_in_object(line_coord);
+var mama = canvas.getActiveObjects();
+let papa = object_coords;
+console.log(papa);
+console.log(objects_in_canvas);
+//alert(mama.left + "," + mama.top);
+//line_coord = mama.getCenterPoint();
+//coords_arr = coords_in_object(line_coord);
+//alert(`cords ${line_coord}, тип ${ typeof(mama)} сама мама ${mama.name}, тип группы ${ typeof(group_line)} сама группа ${group_line} ${group_line.name}`);
+
+//alert(`Х маленький ${coords_arr.xmin}, Х большой ${coords_arr.xmax}, Y маленький ${coords_arr.ymin}, У большой ${coords_arr.ymax}, угол = ${coords_arr.deg},длина ${coords_arr.yardage} `);
+}
+
+function clear_canvas()
+{
+canvas.clear();
+objects_in_canvas =[];
+}
+
+// создаём линию
+function add_line()
+{
+var arr = get_data();
+var line = new fabric.Line([arr.x0, arr.y0, arr.x, arr.y], {
+stroke: generateColor(),
+strokeWidth: 2
+});
+group_line = new fabric.Group([]);
+group_line.toObject = (function(toObject) {
+  return function() {
+    return fabric.util.object.extend(toObject.call(this), {
+      name: this.name
+    });
+  };
+})(group_line.toObject);
+group_line.name = generateChar(2);
+group_line.on('modified', function() {
+  console.log('линия изменена');
+  line_coord = group_line.getCoords();
+	modify_coords_in_object(group_line.name);
+	calculation_intersection_points(group_line.name);
+	coords_arr = coords_in_object(line_coord);
+});
+group_line.on('selected', function() {
+  console.log('выбрана линия');
+  group_line = this;
+  line_coord = this.getCoords();
+  coords_arr = coords_in_object(line_coord);
+  //alert(`Х маленький ${coords_arr.xmin}, Х большой ${coords_arr.xmax}, Y маленький ${coords_arr.ymin}, У большой ${coords_arr.ymax}, угол = ${coords_arr.deg},длина ${coords_arr.yardage} `);
+ //calculation_intersection_points(group_line.name);
+ });
+group_line.on('added', function() {
+  console.log('линия создана');
+  line_coord = group_line.getCoords();
+	modify_coords_in_object(group_line.name);
+	calculation_intersection_points(group_line.name);
+	coords_arr = coords_in_object(line_coord);
+	//calculation_intersection_points(group_line.name);
+});
+group_line.addWithUpdate(line);
+objects_in_canvas.push(group_line.name);
+point_on_line(arr.x0,arr.y0);
+point_on_line(arr.x,arr.y);
+
+}
+
+//метка 1
+function add_label(){
+var arr = get_data();
+coords_arr = coords_in_object(line_coord);
+var pointLabelX = (coords_arr.xmin + Math.cos(coords_arr.deg * Math.PI / 180) * ((coords_arr.yardage*arr.i1)/arr.i2));
+var pointLabelY = (coords_arr.ymin + Math.sin(coords_arr.deg * Math.PI / 180) * ((coords_arr.yardage*arr.i1)/arr.i2));
+if (arr.typeL === "Красная"){
+var image2 = new fabric.Image.fromURL('https://pngicon.ru/file/uploads/geometka.png',
+function(oImg2){
+oImg2.scale(0.05),
+oImg2.set({
+left:pointLabelX -12,
+top: pointLabelY -25,
+});
+group_line.addWithUpdate(oImg2);
+canvas.add(group_line);
+console.log("The coordinates are: ", group_line.getCoords());
+});
+}
+else if (arr.typeL === "Синяя")
+{
+var image2 = new fabric.Image.fromURL('https://pegas-tools.ru/terminal_notactive.png',
+function(oImg2){
+oImg2.scale(0.25),
+oImg2.set({
+left:pointLabelX -20,
+top: pointLabelY -23,
+});
+group_line.addWithUpdate(oImg2);
+canvas.add(group_line);
+console.log("The coordinates are: ", group_line.getCoords());
+});
+}
+else if (arr.typeL === "Особенная")
+{
+var image2 = new fabric.Image.fromURL('https://cdn-icons-png.flaticon.com/128/7103/7103011.png',
+function(oImg2){
+oImg2.scale(0.25),
+oImg2.set({
+left:pointLabelX -12,
+top: pointLabelY -25,
+});
+group_line.addWithUpdate(oImg2);
+canvas.add(group_line);
+console.log("The coordinates are: ", group_line.getCoords());
+});
+}
+}
+
+//Точка на конце отрезка
+function point_on_line(x,y)
+{
+var point = new fabric.Circle({
+  radius: 3,
+  fill: 'black',
+  left: x - 3,
+  top: y -3
+});
+point.on('mouseover', function() {
+  // получаем координаты центра круга
+  var centerX = circle.left + circle.radius;
+  var centerY = circle.top + circle.radius;
+
+  // обновляем содержимое элемента div с координатами
+  var coordsDiv = document.getElementById('coords');
+  coordsDiv.innerHTML = 'Центр круга: x=' + centerX + ', y=' + centerY;
+});
+group_line.addWithUpdate(point);
+canvas.add(group_line);
+}
+
+//случайная генерация цвета
+function generateColor() {
+  return '#' + Math.floor(Math.random()*16777215).toString(16)
+}
+
+// случайная генерация букв
+function generateChar(length) {
+    let result = '';
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const charactersLength = characters.length;
+    let counter = 0;
+    while (counter < length) {
+      result += characters.charAt(Math.floor(Math.random() * charactersLength));
+      counter += 1;
+    }
+    return result;
+}
+
+//поиск по имени
+fabric.Canvas.prototype.getItemByName = function(name) {
+  var object = null,
+      objects = this.getObjects();
+
+  for (var i = 0, len = this.size(); i < len; i++) {
+    if (objects[i].name && objects[i].name === name) {
+      object = objects[i];
+      break;
+    }
+  }
+
+  return object;
+};
+
+$("#x0,#y0,#z,#deg").keyup(function(event){
+	if(event.keyCode == 13){
+		calc_point();
+	}
+});
+
+</script>
+
+</div>
+{%endblock%}
